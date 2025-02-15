@@ -1,0 +1,137 @@
+import re
+
+# Definição de Tokens
+TOKEN_REGEX = [
+    (r'\s+', None),  # Ignorar espaços
+    (r'//.*', None),  # Ignorar comentários
+    (r'\b(int|float|if|else)\b', 'PALAVRA_RESERVADA'),  # Palavras reservadas
+    (r'[a-zA-Z_]\w*', 'IDENTIFICADOR'),  # Identificadores
+    (r'\d+\.\d+|\d+', 'NUMERO'),  # Números (inteiros ou decimais)
+    (r'[+\-*/=<>!]=?|==|!=', 'OPERADOR'),  # Operadores
+    (r'[{}();,]', 'SIMBOLO'),  # Símbolos
+]
+
+# Classe Token
+class Token:
+    def __init__(self, tipo, valor):
+        self.tipo = tipo
+        self.valor = valor
+
+    def __repr__(self):
+        return f'Token({self.tipo}, {repr(self.valor)})'
+
+# Analisador Léxico
+class AnalisadorLexico:
+    def __init__(self, codigo):
+        self.codigo = codigo
+        self.tokens = []
+        self.tokenizar()
+
+    def tokenizar(self):
+        pos = 0
+        while pos < len(self.codigo):
+            for regex, tipo in TOKEN_REGEX:
+                match = re.match(regex, self.codigo[pos:])
+                if match:
+                    valor = match.group(0)
+                    if tipo:  # Ignorar tokens sem tipo (espaços, comentários, etc.)
+                        self.tokens.append(Token(tipo, valor))
+                    pos += len(valor)
+                    break
+            else:
+                raise SyntaxError(f'Caractere inválido: {self.codigo[pos]}')
+
+# Analisador Sintático
+class AnalisadorSintatico:
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.pos = 0
+
+    def consumir(self, tipo, valor=None):
+        if self.pos < len(self.tokens) and self.tokens[self.pos].tipo == tipo:
+            if valor is None or self.tokens[self.pos].valor == valor:
+                self.pos += 1
+                return True
+        return False
+
+    def analisar(self):
+        while self.pos < len(self.tokens):
+            if not (self.declaracao_variavel() or self.atribuicao() or self.condicional()):
+                raise SyntaxError(f'Erro de sintaxe próximo a {self.tokens[self.pos]}')
+
+    def declaracao_variavel(self):
+        """Reconhece declarações como `int x = 10;`"""
+        if self.consumir('PALAVRA_RESERVADA') and self.consumir('IDENTIFICADOR'):
+            if self.consumir('OPERADOR', '='):
+                if self.expressao():
+                    if self.consumir('SIMBOLO', ';'):
+                        return True
+        return False
+
+    def atribuicao(self):
+        """Reconhece atribuições como `y = x + 5;`"""
+        if self.consumir('IDENTIFICADOR') and self.consumir('OPERADOR', '='):
+            if self.expressao():
+                if self.consumir('SIMBOLO', ';'):
+                    return True
+        return False
+
+    def expressao(self):
+        """Reconhece expressões matemáticas como `x + 5` ou `x > 0`"""
+        if self.consumir('IDENTIFICADOR') or self.consumir('NUMERO'):
+            while self.consumir('OPERADOR'):
+                if not (self.consumir('IDENTIFICADOR') or self.consumir('NUMERO')):
+                    return False
+            return True
+        return False
+
+    def bloco(self):
+        """Reconhece blocos de código dentro de `{}`"""
+        if self.consumir('SIMBOLO', '{'):
+            while not self.consumir('SIMBOLO', '}'):
+                if not (self.declaracao_variavel() or self.atribuicao() or self.condicional()):
+                    return False
+            return True
+        return False
+
+    def condicional(self):
+        """Reconhece `if (condicao) { bloco }`"""
+        if self.consumir('PALAVRA_RESERVADA', 'if'):
+            if not self.consumir('SIMBOLO', '('):
+                raise SyntaxError("Erro de sintaxe: esperado '(' após 'if'.")
+            
+            # Analisa a condição (pode ser uma expressão)
+            if not self.expressao():
+                raise SyntaxError("Erro de sintaxe: condição do 'if' inválida.")
+            
+            if not self.consumir('SIMBOLO', ')'):
+                raise SyntaxError("Erro de sintaxe: esperado ')' após a condição do 'if'.")
+            
+            # Analisa o bloco de código associado ao 'if'
+            if not self.bloco():
+                raise SyntaxError("Erro de sintaxe: bloco do 'if' inválido.")
+            
+            return True
+        return False
+
+# Teste com código MiniLang
+codigo_teste = """
+int x = 10;
+y = x + 5;
+if (x > 0) {
+    y = y - 2;
+}
+"""
+
+# Execução
+try:
+    lexer = AnalisadorLexico(codigo_teste)
+    print("Tokens gerados:")
+    for token in lexer.tokens:
+        print(token)
+
+    parser = AnalisadorSintatico(lexer.tokens)
+    parser.analisar()
+    print("Análise sintática concluída com sucesso!")
+except SyntaxError as e:
+    print(f"Erro encontrado: {e}")
